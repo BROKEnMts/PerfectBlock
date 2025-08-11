@@ -2,7 +2,6 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Configurações
 local detectionRadius = 15       -- Distância para detectar ataques
@@ -50,7 +49,7 @@ button.MouseButton1Click:Connect(function()
 	updateColor()
 end)
 
--- Função para ativar o block (PC tecla F, Mobile evento remoto)
+-- Função para ativar o block (PC e Mobile executam "F")
 local function triggerBlock()
 	if blocking then return end
 	blocking = true
@@ -61,16 +60,10 @@ local function triggerBlock()
 	end
 	lastBlockTime = tick()
 
-	if UserInputService.KeyboardEnabled then
-		game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.F, false, game)
-		task.wait(0.05)
-		game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.F, false, game)
-	else
-		local blockEvent = ReplicatedStorage:FindFirstChild("BlockEvent")
-		if blockEvent and blockEvent:IsA("RemoteEvent") then
-			blockEvent:FireServer()
-		end
-	end
+	-- Executa "F" tanto no PC quanto no Mobile
+	game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.F, false, game)
+	task.wait(0.05)
+	game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.F, false, game)
 
 	task.delay(0.15, function()
 		blocking = false
