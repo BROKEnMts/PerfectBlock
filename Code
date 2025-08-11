@@ -1,0 +1,169 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Configurações
+local detectionRadius = 15       -- Distância para detectar ataques
+local perfectBlockTime = 0.1     -- Tempo para bloquear antes do impacto
+
+-- Estado do auto block
+local autoBlockEnabled = true
+local blocking = false
+local lastBlockTime = 0
+
+-- Criar ScreenGui e botão toggle
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ToggleButtonGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local button = Instance.new("ImageButton")
+button.Name = "ToggleButton"
+button.Parent = screenGui
+button.Size = UDim2.new(0, 60, 0, 60)
+button.Position = UDim2.new(0.9, 0, 0.8, 0)
+button.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Verde ligado inicialmente
+button.BorderSizePixel = 0
+button.AutoButtonColor = false
+button.Image = ""
+button.ZIndex = 10
+button.AnchorPoint = Vector2.new(0.5, 0.5)
+button.BackgroundTransparency = 0
+
+local uicorner = Instance.new("UICorner", button)
+uicorner.CornerRadius = UDim.new(1, 0)
+
+-- Função para atualizar cor do botão
+local function updateColor()
+	if autoBlockEnabled then
+		button.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- verde ligado
+	else
+		button.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- vermelho desligado
+	end
+end
+updateColor()
+
+button.MouseButton1Click:Connect(function()
+	autoBlockEnabled = not autoBlockEnabled
+	updateColor()
+end)
+
+-- Função para ativar o block (PC tecla F, Mobile evento remoto)
+local function triggerBlock()
+	if blocking then return end
+	blocking = true
+
+	if tick() - lastBlockTime < perfectBlockTime then
+		blocking = false
+		return
+	end
+	lastBlockTime = tick()
+
+	if UserInputService.KeyboardEnabled then
+		game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.F, false, game)
+		task.wait(0.05)
+		game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.F, false, game)
+	else
+		local blockEvent = ReplicatedStorage:FindFirstChild("BlockEvent")
+		if blockEvent and blockEvent:IsA("RemoteEvent") then
+			blockEvent:FireServer()
+		end
+	end
+
+	task.delay(0.15, function()
+		blocking = false
+	end)
+end
+
+-- Cálculo do tempo para impacto do projétil
+local function calculateTimeToImpact(obj, playerPos)
+	if not obj or not obj:IsA("BasePart") then return math.huge end
+	local velocity = obj.Velocity
+	if velocity.Magnitude == 0 then return math.huge end
+
+	local relativePos = playerPos - obj.Position
+	local speedTowardsPlayer = velocity:Dot(relativePos.Unit)
+	if speedTowardsPlayer <= 0 then return math.huge end
+
+	local timeToImpact = relativePos.Magnitude / speedTowardsPlayer
+	return timeToImpact
+end
+
+-- Detectar ataques próximos e acionar bloqueio
+local function detectIncomingAttacks()
+	if not autoBlockEnabled then return end
+
+	local char = player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+	local playerPos = char.HumanoidRootPart.Position
+
+	for _, obj in pairs(workspace:GetChildren()) do
+		-- Detecta inimigos (Model com Humanoid)
+		if obj:IsA("Model") and obj ~= char and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
+			local root = obj.HumanoidRootPart
+			local dist = (root.Position - playerPos).Magnitude
+			if dist <= detectionRadius then
+				triggerBlock()
+				return
+			end
+		end
+
+		-- Detecta projéteis (BasePart com Velocity)
+		if obj:IsA("BasePart") and obj.Velocity and obj.Velocity.Magnitude > 0 then
+			local dist = (obj.Position - playerPos).Magnitude
+			if dist <= detectionRadius then
+				local tti = calculateTimeToImpact(obj, playerPos)
+				if tti <= perfectBlockTime then
+					triggerBlock()
+					return
+				end
+			end
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(detectIncomingAttacks)
+
+-- Drag do botão (PC e mobile)
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function updatePosition(input)
+	local delta = input.Position - dragStart
+	button.Position = UDim2.new(
+		math.clamp(startPos.X.Scale + delta.X / button.Parent.AbsoluteSize.X, 0, 1),
+		0,
+		math.clamp(startPos.Y.Scale + delta.Y / button.Parent.AbsoluteSize.Y, 0, 1),
+		0
+	)
+end
+
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or
+	   input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or
+	   input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and input == dragInput then
+		updatePosition(input)
+	end
+end)
